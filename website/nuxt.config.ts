@@ -9,4 +9,14 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
+  nitro: {
+    prerender: {
+      routes: ["/sitemap.xml"],
+    },
+  },
+  app: {
+    baseURL: process.env.NODE_ENV === "production" ? "/hc1-sig-archive/" : "/",
+    buildAssetsDir: "/_nuxt/",
+  },
+  ssr: false,
 });
