@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --animate-ping: ping 3s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+  @keyframes ping {
+    75%,
+    100% {
+      transform: scale(1);
+      opacity: 0.1;
+    }
+  }
+}

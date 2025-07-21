@@ -1,0 +1,13 @@
+.kiro
+
+# Bot
+bot/config/bot.json
+bot/node_modules/
+bot/data/matrix-storage.json
+
+# Website
+website/.output
+website/.data
+website/.nuxt
+website/node_modules
+data/matrix-storage.json

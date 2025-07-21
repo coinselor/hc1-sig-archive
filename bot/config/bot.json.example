@@ -1,0 +1,26 @@
+{
+  "matrix": {
+    "homeserverUrl": "https://matrix.example.org",
+    "accessToken": "WILL_BE_OVERRIDDEN_BY_MATRIX_ACCESS_TOKEN_ENV_VAR",
+    "userId": "@meetingbot:example.org",
+    "displayName": "Meeting Bot"
+  },
+  "authorization": {
+    "authorizedUsers": [
+      "@alice:example.org",
+      "@bob:example.org"
+    ]
+  },
+  "storage": {
+    "provider": "github",
+    "local": {
+      "directory": "./data/meetings"
+    },
+    "github": {
+      "repository": "your-org/meeting-minutes",
+      "branch": "main",
+      "token": "WILL_BE_OVERRIDDEN_BY_GITHUB_TOKEN_ENV_VAR",
+      "websiteUrl": "https://your-org.github.io/meeting-minutes"
+    }
+  }
+}

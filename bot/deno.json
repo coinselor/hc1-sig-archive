@@ -1,0 +1,16 @@
+{
+  "tasks": {
+    "start": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv src/main.ts",
+    "dev": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv --watch src/main.ts",
+    "test": "deno test --allow-net --allow-read --allow-write --allow-env --unstable-kv"
+  },
+  "imports": {
+    "matrix-bot-sdk": "npm:matrix-bot-sdk@^0.7.1",
+    "markdown-it": "npm:markdown-it@^14.1.0",
+    "zod": "npm:zod@^3.22.4"
+  },
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "lib": ["deno.ns", "deno.unstable", "dom"]
+  }
+}
