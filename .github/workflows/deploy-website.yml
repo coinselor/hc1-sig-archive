@@ -46,7 +46,7 @@ jobs:
       - name: Generate static site
         run: |
           cd website
-          NODE_ENV=production bun run generate
+          NUXT_APP_BASE_URL=/hc1-sig-archive/ bun run build --preset github_pages
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
