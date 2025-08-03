@@ -63,6 +63,11 @@ export const BotConfigurationSchema = z.object({
   }, {
     message: "Storage configuration must match the selected provider",
   }),
+  
+  minutesGeneration: z.object({
+    includeSystemMessages: z.boolean().default(true),
+    timeZone: z.string().default("UTC"),
+  }).optional(),
 });
 
 export type BotConfiguration = z.infer<typeof BotConfigurationSchema>;
@@ -92,9 +97,16 @@ export interface MatrixEvent {
   origin_server_ts: number;
   type: string;
   content: Record<string, unknown>;
-  room_id?: string;
+  room_id: string;
   state_key?: string;
   redacts?: string; // For redaction events
+}
+
+export interface MemberEventContent {
+  membership: "join" | "invite" | "leave" | "ban" | "knock";
+  displayname?: string | null;
+  avatar_url?: string;
+  [key: string]: unknown;
 }
 
 export interface TextMessageContent {
@@ -126,15 +138,20 @@ export type MessageContent =
   | EmoteMessageContent
   | NoticeMessageContent;
 
+export interface RelationContent {
+  rel_type?: string;
+  event_id?: string;
+}
+
 export interface MatrixBotService {
   start(): Promise<void>;
   stop(): Promise<void>;
-  handleCommand(roomId: string, event: MatrixEvent): Promise<void>;
+  processEvent(roomId: string, event: MatrixEvent): Promise<void>;
   handleMessage(roomId: string, event: MatrixEvent): Promise<void>;
 }
 
 export interface CommandResult {
-  command: "start" | "end" | "cancel" | "status";
+  command: "start" | "end" | "cancel" | "status" | "help";
   valid: boolean;
   error?: string;
 }

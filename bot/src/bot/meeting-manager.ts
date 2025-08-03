@@ -3,6 +3,10 @@ import { MinutesGenerator, GeneratedMinutes } from "./minutes-generator.ts";
 
 export interface MeetingManagerOptions {
   kvPath?: string;
+  minutesGeneration?: {
+    includeSystemMessages?: boolean;
+    timeZone?: string;
+  };
 }
 
 export interface MeetingStartResult {
@@ -44,10 +48,8 @@ export class MeetingManager {
    */
   async initialize(): Promise<void> {
     try {
-      // Open Deno KV database
       this.kv = await Deno.openKv(this.kvPath);
       
-      // Recover active sessions from persistent storage
       await this.recoverActiveSessions();
       
       console.log(`MeetingManager initialized with ${this.activeSessions.size} recovered sessions`);
@@ -60,7 +62,7 @@ export class MeetingManager {
   /**
    * Close the meeting manager and clean up resources
    */
-  async close(): Promise<void> {
+  close(): void {
     try {
       if (this.kv) {
         this.kv.close();
@@ -81,7 +83,6 @@ export class MeetingManager {
     chairDisplayName: string
   ): Promise<MeetingStartResult> {
     try {
-      // Check if there's already an active meeting in this room
       if (this.activeSessions.has(roomId)) {
         return {
           success: false,
@@ -89,7 +90,6 @@ export class MeetingManager {
         };
       }
 
-      // Create new meeting session
       const sessionId = this.generateSessionId(roomId);
       const session: MeetingSession = {
         id: sessionId,
@@ -102,13 +102,11 @@ export class MeetingManager {
         participants: new Set([chairUserId]),
       };
 
-      // Store in memory
       this.activeSessions.set(roomId, session);
 
-      // Persist to Deno KV
       await this.persistSession(session);
 
-      const confirmationMessage = `${roomName} meeting initiated by ${chairDisplayName} acting as chair. A record of all messages will be automatically archived.`;
+      const confirmationMessage = `${roomName} meeting initiated by ${chairDisplayName} acting as chair.\nA record of all messages will be automatically archived.`;
 
       return {
         success: true,
@@ -138,10 +136,8 @@ export class MeetingManager {
         };
       }
 
-      // Set end time
       session.endTime = new Date();
 
-      // Generate meeting minutes
       let minutes: GeneratedMinutes;
       try {
         minutes = this.minutesGenerator.generateMinutes(session);
@@ -153,13 +149,10 @@ export class MeetingManager {
         };
       }
 
-      // Update persistent storage
       await this.persistSession(session);
 
-      // Remove from active sessions
       this.activeSessions.delete(roomId);
 
-      // Remove from persistent storage of active sessions
       await this.kv.delete(["active_sessions", roomId]);
 
       const duration = this.calculateDuration(session.startTime, session.endTime);
@@ -194,10 +187,8 @@ export class MeetingManager {
         };
       }
 
-      // Remove from active sessions
       this.activeSessions.delete(roomId);
 
-      // Remove from persistent storage
       await this.kv.delete(["active_sessions", roomId]);
       await this.kv.delete(["sessions", session.id]);
 
@@ -246,19 +237,10 @@ export class MeetingManager {
       const session = this.activeSessions.get(roomId);
       
       if (!session) {
-        // No active meeting, don't capture
         return false;
       }
 
-      // Don't capture bot's own messages (this would be replaced with actual bot user ID check)
-      // For now, we'll capture all messages since we don't have the bot's user ID
-      // if (event.sender === botUserId) {
-      //   return false;
-      // }
-
       const content = event.content as unknown as MessageContent;
-      
-      // Only capture text, emote, and notice messages
       if (!content.msgtype || !["m.text", "m.emote", "m.notice"].includes(content.msgtype)) {
         return false;
       }
@@ -272,13 +254,10 @@ export class MeetingManager {
         eventId: event.event_id,
       };
 
-      // Add message to session
       session.messages.push(capturedMessage);
       
-      // Add sender to participants
       session.participants.add(event.sender);
 
-      // Persist updated session
       await this.persistSession(session);
 
       return true;
@@ -349,7 +328,7 @@ export class MeetingManager {
         timestamp: new Date(),
         senderId: "system",
         senderDisplayName: "System",
-        content: `${displayName} ${eventType === "join" ? "joined" : "left"} the meeting`,
+        content: `${displayName} ${eventType === "join" ? "joined" : "left"} the meeting.`,
         messageType: "m.notice",
         eventId: `system-${Date.now()}`,
       };
@@ -370,20 +349,6 @@ export class MeetingManager {
   }
 
   /**
-   * Generate minutes for a completed meeting session
-   */
-  generateMinutesForSession(session: MeetingSession): GeneratedMinutes {
-    return this.minutesGenerator.generateMinutes(session);
-  }
-
-  /**
-   * Get all active sessions (for monitoring/debugging)
-   */
-  getActiveSessions(): Map<string, MeetingSession> {
-    return new Map(this.activeSessions);
-  }
-
-  /**
    * Recover active sessions from persistent storage after restart
    */
   private async recoverActiveSessions(): Promise<void> {
@@ -394,7 +359,7 @@ export class MeetingManager {
         const roomId = entry.key[1] as string;
         const sessionData = entry.value as MeetingSession;
         
-        // Reconstruct the session with proper types
+        // Reconstruct the serialized session data
         const session: MeetingSession = {
           ...sessionData,
           startTime: new Date(sessionData.startTime),
@@ -421,7 +386,6 @@ export class MeetingManager {
         participants: Array.from(session.participants),
       };
 
-      // Store the complete session
       await this.kv.set(["sessions", session.id], sessionData);
       
       // Store active session reference if meeting is ongoing

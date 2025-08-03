@@ -11,6 +11,8 @@ import {
   MessageContent,
   AuthorizationService,
   StorageProvider,
+  MemberEventContent,
+  RelationContent,
 } from "../types/index.ts";
 import { MeetingManager } from "./meeting-manager.ts";
 import { CommandHandler } from "./command-handler.ts";
@@ -36,41 +38,29 @@ export class MatrixBotServiceImpl implements MatrixBotService {
   ) {
     this.config = config;
     this.authorizationService = authorizationService;
-    this.meetingManager = meetingManager || new MeetingManager();
-    
-    // Initialize command handler
+    this.meetingManager = meetingManager || new MeetingManager({ minutesGeneration: config.minutesGeneration });
     this.commandHandler = new CommandHandler({
       authorizationService: this.authorizationService,
     });
-    
-    // Initialize storage providers
     this.storageProvider = StorageFactory.createStorageProvider(config);
     this.fallbackStorageProvider = StorageFactory.createFallbackStorageProvider();
   }
 
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log("Matrix bot service is already running");
+      console.log("HC1 Meeting Bot service is already running");
       return;
     }
 
     try {
-      console.log("Initializing Matrix client...");
-      
-      // Initialize meeting manager
       await this.meetingManager.initialize();
-      
-      // Create storage provider for Matrix client state
       const storage = new SimpleFsStorageProvider("./data/matrix-storage.json");
-      
-      // Initialize Matrix client
       this.client = new MatrixClient(
         this.config.matrix.homeserverUrl,
         this.config.matrix.accessToken,
         storage
       );
 
-      // Set display name if configured
       if (this.config.matrix.displayName) {
         try {
           await this.client.setDisplayName(this.config.matrix.displayName);
@@ -79,24 +69,21 @@ export class MatrixBotServiceImpl implements MatrixBotService {
         }
       }
 
-      // Enable auto-join for rooms the bot is invited to
       AutojoinRoomsMixin.setupOnClient(this.client);
 
-      // Set up event listeners
       this.setupEventListeners();
 
-      // Start the client
       console.log("Starting Matrix client...");
       await this.client.start();
       
       this.isRunning = true;
       this.reconnectAttempts = 0;
       
-      console.log(`Matrix bot connected as ${this.config.matrix.userId}`);
-      console.log("Bot is ready to receive commands and messages");
+      console.log(`HC1 Meeting Bot connected as ${this.config.matrix.userId}`);
+      console.log("Bot is ready.");
       
     } catch (error) {
-      console.error("Failed to start Matrix bot service:", error);
+      console.error("Failed to start HC1 Meeting Bot service:", error);
       await this.handleConnectionError(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
@@ -104,26 +91,24 @@ export class MatrixBotServiceImpl implements MatrixBotService {
 
   async stop(): Promise<void> {
     if (!this.isRunning || !this.client) {
-      console.log("Matrix bot service is not running");
+      console.log("HC1 Meeting Bot service is not running");
       return;
     }
 
     try {
-      console.log("Stopping Matrix bot service...");
+      console.log("Stopping HC1 Meeting Bot service...");
       
-      // Stop the client
-      await this.client.stop();
+      this.client.stop();
       
-      // Close the meeting manager
       await this.meetingManager.close();
       
       this.isRunning = false;
       this.client = null;
       
-      console.log("Matrix bot service stopped successfully");
+      console.log("HC1 Meeting Bot service gracefully stopped.");
       
     } catch (error) {
-      console.error("Error stopping Matrix bot service:", error);
+      console.error("Error stopping HC1 Meeting Bot service:", error);
       throw error;
     }
   }
@@ -133,19 +118,15 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       throw new Error("Matrix client not initialized");
     }
 
-    // Listen for room messages
     this.client.on("room.message", async (roomId: string, event: MatrixEvent) => {
       try {
-        // Skip messages from the bot itself
         if (event.sender === this.config.matrix.userId) {
           return;
         }
 
-        // Handle commands (messages starting with /)
         if (this.isCommand(event)) {
-          await this.handleCommand(roomId, event);
+          await this.processEvent(roomId, event);
         } else {
-          // Handle regular messages for meeting capture
           await this.handleMessage(roomId, event);
         }
       } catch (error) {
@@ -153,16 +134,13 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       }
     });
 
-    // Listen for room member events (joins/leaves) and other room events
     this.client.on("room.event", async (roomId: string, event: MatrixEvent) => {
       try {
         if (event.type === "m.room.member") {
           await this.handleMemberEvent(roomId, event);
         } else if (event.type === "m.room.message") {
-          // Handle message edits (requirement 3.3)
           await this.handleMessageEdit(roomId, event);
         } else if (event.type === "m.room.redaction") {
-          // Handle message redactions (requirement 3.4)
           await this.handleMessageRedaction(roomId, event);
         }
       } catch (error) {
@@ -170,13 +148,11 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       }
     });
 
-    // Listen for connection errors
     this.client.on("sync.failed", async (error: Error) => {
       console.error("Matrix sync failed:", error);
       await this.handleConnectionError(error);
     });
 
-    // Listen for successful sync
     this.client.on("sync", () => {
       if (this.reconnectAttempts > 0) {
         console.log("Matrix sync restored successfully");
@@ -188,42 +164,36 @@ export class MatrixBotServiceImpl implements MatrixBotService {
 
   private isCommand(event: MatrixEvent): boolean {
     const content = event.content as unknown as MessageContent;
-    return content.msgtype === "m.text" && !!content.body && content.body.startsWith("/");
+    return content.msgtype === "m.text" && !!content.body && content.body.startsWith("#");
   }
 
-  async handleCommand(roomId: string, event: MatrixEvent): Promise<void> {
+  async processEvent(roomId: string, event: MatrixEvent): Promise<void> {
     const content = event.content as unknown as MessageContent;
     const command = content.body?.trim() || "";
     
     console.log(`Received command in ${roomId}: ${command} from ${event.sender}`);
     
     try {
-      // Parse and validate the command using CommandHandler
-      const commandResult = await this.commandHandler.handleCommand(roomId, event);
+      const commandResult = this.commandHandler.handleCommand(event);
       
       if (!commandResult.valid) {
-        // Send formatted error message for invalid commands
-        const errorMessage = commandResult.error || "Invalid command";
+        const errorMessage = commandResult.error || "❌ FAIL: Invalid command.";
         
-        // Check if it's an authorization error (contains "Access Denied")
         if (errorMessage.includes("Access Denied")) {
           await this.sendFormattedMessage(roomId, errorMessage);
         } else {
-          // Format other error messages
           const formattedError = errorMessage.includes("Unknown command") 
-            ? `❌ **Invalid Command**\n\n${errorMessage}\n\nUse \`/meetingstatus\` to check current meeting status.`
-            : `❌ **Command Error**\n\n${errorMessage}`;
+            ? `❌ FAIL: Invalid command.\n\n${errorMessage}\n\nUse \`#help\` to view available commands.`
+            : `❌ FAIL: Command failed.\n\n${errorMessage}`;
           
           await this.sendFormattedMessage(roomId, formattedError);
         }
         return;
       }
 
-      // Get room name for meeting operations
       const roomName = await this.getRoomName(roomId);
-      const senderDisplayName = await this.getSenderDisplayName(roomId, event.sender);
+      const senderDisplayName = await this.getSenderDisplayName(event.sender);
 
-      // Execute the validated command
       switch (commandResult.command) {
         case "start":
           await this.handleStartMeetingCommand(roomId, roomName, event.sender, senderDisplayName);
@@ -237,13 +207,15 @@ export class MatrixBotServiceImpl implements MatrixBotService {
         case "status":
           await this.handleStatusCommand(roomId);
           break;
+        case "help":
+          await this.sendFormattedMessage(roomId, this.commandHandler.getHelpText());
+          break;
         default:
-          await this.sendMessage(roomId, "Unknown command. Use /startmeeting, /endmeeting, /cancelmeeting, or /meetingstatus");
+          await this.sendMessage(roomId, "Unknown command. Use #help to see available commands.");
       }
     } catch (error) {
       console.error(`Error handling command in ${roomId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.sendMessage(roomId, `Error processing command: ${errorMessage}`);
+      await this.sendMessage(roomId, `There was an unexpected error. ¯_(ツ)_/¯`);
     }
   }
 
@@ -252,13 +224,13 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     
     console.log(`Message in ${roomId} from ${event.sender}: ${content.body || "[no body]"}`);
     
-    // Requirement 3.1: Capture messages during active meetings
-    // Requirement 3.2: Don't capture bot's own messages (already filtered in setupEventListeners)
     try {
-      // Get sender display name
-      const senderDisplayName = await this.getSenderDisplayName(roomId, event.sender);
+      if (event.sender === this.config.matrix.userId) {
+        return;
+      }
+      const senderDisplayName = await this.getSenderDisplayName(event.sender);
       
-      // Attempt to capture the message (will only succeed if meeting is active)
+      // Only works if meeting is active
       const captured = await this.meetingManager.captureMessage(roomId, event, senderDisplayName);
       
       if (captured) {
@@ -272,23 +244,20 @@ export class MatrixBotServiceImpl implements MatrixBotService {
   private async handleMemberEvent(roomId: string, event: MatrixEvent): Promise<void> {
     console.log(`Member event in ${roomId}: ${event.type} for ${event.state_key}`);
     
-    // Requirement 3.5: Track participant join/leave events during meetings
     try {
       if (!event.state_key) {
         return; // No user ID to track
       }
 
-      // Skip events for the bot itself
       if (event.state_key === this.config.matrix.userId) {
         return;
       }
 
-      const content = event.content as any;
+      const content = event.content as unknown as MemberEventContent;
       const membership = content?.membership;
       
       if (membership === "join") {
-        // User joined the room
-        const displayName = await this.getSenderDisplayName(roomId, event.state_key);
+        const displayName = await this.getSenderDisplayName(event.state_key);
         const recorded = await this.meetingManager.recordParticipantEvent(
           roomId,
           event.state_key,
@@ -299,9 +268,8 @@ export class MatrixBotServiceImpl implements MatrixBotService {
         if (recorded) {
           console.log(`Recorded join event for ${event.state_key} in meeting for room ${roomId}`);
         }
-      } else if (membership === "leave" || membership === "ban" || membership === "kick") {
-        // User left the room (or was removed)
-        const displayName = await this.getSenderDisplayName(roomId, event.state_key);
+      } else if (membership === "leave" || membership === "ban") {
+        const displayName = await this.getSenderDisplayName(event.state_key);
         const recorded = await this.meetingManager.recordParticipantEvent(
           roomId,
           event.state_key,
@@ -318,25 +286,23 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     }
   }
 
-  // Requirement 3.3: Handle message edits during meetings
   private async handleMessageEdit(roomId: string, event: MatrixEvent): Promise<void> {
     try {
-      // Skip edits from the bot itself
       if (event.sender === this.config.matrix.userId) {
         return;
       }
 
-      const content = event.content as any;
+      const content = event.content as unknown as MessageContent;
       
       // Check if this is an edit (has m.relates_to with rel_type "m.replace")
-      if (content["m.relates_to"]?.rel_type === "m.replace") {
-        const originalEventId = content["m.relates_to"].event_id;
+      const relatesTo = content["m.relates_to"] as RelationContent;
+      if (relatesTo?.rel_type === "m.replace") {
+        const originalEventId = relatesTo.event_id;
         const newContent = content["m.new_content"] as MessageContent;
         
-        if (newContent && ["m.text", "m.emote", "m.notice"].includes(newContent.msgtype)) {
-          const senderDisplayName = await this.getSenderDisplayName(roomId, event.sender);
+        if (originalEventId && newContent && ["m.text", "m.emote", "m.notice"].includes(newContent.msgtype)) {
+          const senderDisplayName = await this.getSenderDisplayName(event.sender);
           
-          // Create a modified event for the edit
           const editEvent: MatrixEvent = {
             ...event,
             content: newContent as Record<string, unknown>,
@@ -359,10 +325,8 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     }
   }
 
-  // Requirement 3.4: Handle message redactions during meetings
   private async handleMessageRedaction(roomId: string, event: MatrixEvent): Promise<void> {
     try {
-      // Skip redactions from the bot itself
       if (event.sender === this.config.matrix.userId) {
         return;
       }
@@ -370,12 +334,12 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       const redactedEventId = event.content?.redacts || event.redacts;
       
       if (redactedEventId) {
-        const senderDisplayName = await this.getSenderDisplayName(roomId, event.sender);
+        const senderDisplayName = await this.getSenderDisplayName(event.sender);
         
-        // Create a special message to record the redaction
         const redactionEvent: MatrixEvent = {
           event_id: event.event_id,
           sender: event.sender,
+          room_id: event.room_id,
           origin_server_ts: event.origin_server_ts,
           type: "m.room.message",
           content: {
@@ -418,12 +382,11 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     
     try {
       if (this.client) {
-        await this.client.stop();
+        this.client.stop();
       }
       await this.start();
     } catch (reconnectError) {
       console.error("Reconnection failed:", reconnectError);
-      // The error will trigger another reconnection attempt
     }
   }
 
@@ -443,7 +406,6 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     }
   }
 
-  // Utility method to send formatted messages
   async sendFormattedMessage(roomId: string, text: string, html?: string): Promise<void> {
     if (!this.client) {
       throw new Error("Matrix client not initialized");
@@ -467,7 +429,6 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     }
   }
 
-  // Utility method to reply to a message
   async replyToMessage(roomId: string, originalEvent: MatrixEvent, replyText: string): Promise<void> {
     if (!this.client) {
       throw new Error("Matrix client not initialized");
@@ -483,17 +444,14 @@ export class MatrixBotServiceImpl implements MatrixBotService {
     }
   }
 
-  // Getter for checking if the service is running
   get running(): boolean {
     return this.isRunning;
   }
 
-  // Getter for the Matrix client (for testing purposes)
   get matrixClient(): MatrixClient | null {
     return this.client;
   }
 
-  // Command handler methods
   private async handleStartMeetingCommand(
     roomId: string,
     roomName: string,
@@ -509,29 +467,18 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       );
 
       if (result.success) {
-        // Requirement 1.6: Formatted confirmation message for meeting start
-        const formattedMessage = `**Meeting Started** 🎯\n\n` +
-          `${roomName} meeting initiated by ${chairDisplayName} acting as chair. ` +
-          `A record of all messages will be automatically archived.\n\n` +
-          `**Meeting Details:**\n` +
-          `• **Room:** ${roomName}\n` +
-          `• **Chair:** ${chairDisplayName}\n` +
-          `• **Started:** ${new Date().toLocaleString()}\n\n` +
-          `Use \`/endmeeting\` to end the meeting and generate minutes.`;
-        
-        await this.sendFormattedMessage(roomId, formattedMessage);
+        await this.sendFormattedMessage(roomId, result.message);
       } else {
-        // Handle error cases with formatted messages
         const errorMessage = result.message.includes("already active") 
-          ? `❌ **Cannot Start Meeting**\n\nA meeting is already active in this room. Please end the current meeting before starting a new one.\n\nUse \`/meetingstatus\` to check the current meeting details.`
-          : `❌ **Failed to Start Meeting**\n\n${result.message}`;
+          ? `❌ FAIL: A meeting is already active in this room. Please end the current meeting before starting a new one.`
+          : `❌ FAIL: Meeting did not start.\n\n${result.message}`;
         
         await this.sendFormattedMessage(roomId, errorMessage);
       }
     } catch (error) {
       console.error(`Error starting meeting in ${roomId}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.sendMessage(roomId, `❌ **Failed to start meeting:** ${errorMessage}`);
+      await this.sendMessage(roomId, `❌ FAIL: Meeting did not start.\n\n${errorMessage}`);
     }
   }
 
@@ -540,73 +487,49 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       const result = await this.meetingManager.endMeeting(roomId);
 
       if (result.success && result.minutes && result.session) {
-        // Try to save minutes using primary storage provider
         try {
-          const url = await this.storageProvider.saveMinutes(result.session, result.minutes.content);
+          await this.storageProvider.saveMinutes(result.session, result.minutes.content);
           const websiteUrl = await this.storageProvider.getMinutesUrl(result.session);
           
-          // Requirement 2.6: Meeting end confirmation with website URL
           if (websiteUrl) {
-            const formattedMessage = `**Meeting Ended** ✅\n\n` +
-              `${result.session.roomName} meeting has ended.\n\n` +
-              `**Meeting Summary:**\n` +
-              `• **Duration:** ${this.calculateDuration(result.session.startTime, result.session.endTime!)}\n` +
-              `• **Messages captured:** ${result.session.messages.length}\n` +
-              `• **Participants:** ${result.session.participants.size}\n\n` +
-              `📄 **Minutes are available at:** ${websiteUrl}`;
+            const formattedMessage = 
+              `${result.session.roomName} meeting has ended after ${this.calculateDuration(result.session.startTime, result.session.endTime!)} with ${result.session.messages.length} messages captured and ${result.session.participants.size} participants.\n\n` +
+              `Minutes are available at ${websiteUrl}`;
             
             await this.sendFormattedMessage(roomId, formattedMessage);
           } else {
-            const formattedMessage = `**Meeting Ended** ✅\n\n` +
-              `${result.session.roomName} meeting has ended.\n\n` +
-              `**Meeting Summary:**\n` +
-              `• **Duration:** ${this.calculateDuration(result.session.startTime, result.session.endTime!)}\n` +
-              `• **Messages captured:** ${result.session.messages.length}\n` +
-              `• **Participants:** ${result.session.participants.size}\n\n` +
-              `📄 Minutes have been saved successfully.`;
+            const formattedMessage = `${result.session.roomName} meeting has ended after ${this.calculateDuration(result.session.startTime, result.session.endTime!)} with ${result.session.messages.length} messages captured and ${result.session.participants.size} participants.\n\n` +
+              `Minutes have been locally stored.`;
             
             await this.sendFormattedMessage(roomId, formattedMessage);
           }
         } catch (storageError) {
           console.error("Primary storage failed, trying fallback:", storageError);
           
-          // Try fallback storage
           try {
             await this.fallbackStorageProvider.saveMinutes(result.session, result.minutes.content);
-            const formattedMessage = `**Meeting Ended** ⚠️\n\n` +
-              `${result.session.roomName} meeting has ended.\n\n` +
-              `**Meeting Summary:**\n` +
-              `• **Duration:** ${this.calculateDuration(result.session.startTime, result.session.endTime!)}\n` +
-              `• **Messages captured:** ${result.session.messages.length}\n` +
-              `• **Participants:** ${result.session.participants.size}\n\n` +
-              `📄 Minutes saved to local backup storage due to primary storage failure.`;
+            const formattedMessage = `${result.session.roomName} meeting has ended.\n\n` +
+              `Minutes saved to local backup storage due to primary storage failure.`;
             
             await this.sendFormattedMessage(roomId, formattedMessage);
           } catch (fallbackError) {
             console.error("Fallback storage also failed:", fallbackError);
-            const errorMessage = `❌ **Meeting Ended with Storage Error**\n\n` +
-              `${result.session.roomName} meeting has ended, but failed to save minutes.\n` +
-              `Please contact administrator.\n\n` +
-              `**Meeting Summary:**\n` +
-              `• **Duration:** ${this.calculateDuration(result.session.startTime, result.session.endTime!)}\n` +
-              `• **Messages captured:** ${result.session.messages.length}\n` +
-              `• **Participants:** ${result.session.participants.size}`;
+            const errorMessage = `${result.session.roomName} meeting has ended, but failed to save minutes.\n`;
             
             await this.sendFormattedMessage(roomId, errorMessage);
           }
         }
       } else {
-        // Handle error cases with formatted messages
         const errorMessage = result.message.includes("No active meeting") 
-          ? `❌ **Cannot End Meeting**\n\nNo active meeting found in this room.`
-          : `❌ **Failed to End Meeting**\n\n${result.message}`;
+          ? `❌ FAIL: No active meeting found in this room.`
+          : `❌ FAIL: Meeting could not end.\n\n${result.message}`;
         
         await this.sendFormattedMessage(roomId, errorMessage);
       }
     } catch (error) {
       console.error(`Error ending meeting in ${roomId}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.sendFormattedMessage(roomId, `❌ **Failed to end meeting:** ${errorMessage}`);
+      await this.sendFormattedMessage(roomId, `❌ FAIL: Meeting could not end.\n\n${errorMessage}`);
     }
   }
 
@@ -615,26 +538,20 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       const result = await this.meetingManager.cancelMeeting(roomId);
       
       if (result.success) {
-        // Requirement 8.5: Confirmation message when meeting is cancelled
-        const formattedMessage = `**Meeting Cancelled** ❌\n\n` +
-          `The meeting has been cancelled and no minutes will be generated.\n` +
-          `All captured messages for this session have been discarded.`;
-        
-        await this.sendFormattedMessage(roomId, formattedMessage);
+        await this.sendFormattedMessage(roomId, result.message);
       } else {
-        // Requirements 8.3 & 8.4: Error messages for invalid states and unauthorized users
         const errorMessage = result.message.includes("No active meeting") 
-          ? `❌ **Cannot Cancel Meeting**\n\nNo active meeting found in this room.`
+          ? `❌ FAIL: No active meeting found in this room.`
           : result.message.includes("Insufficient permissions")
-          ? `❌ **Access Denied**\n\nInsufficient permissions. You are not authorized to cancel meetings.`
-          : `❌ **Failed to Cancel Meeting**\n\n${result.message}`;
+          ? `❌ FAIL: Insufficient permissions. You are not authorized to cancel meetings.`
+          : `❌ FAIL: Meeting could not be cancelled. ${result.message}`;
         
         await this.sendFormattedMessage(roomId, errorMessage);
       }
     } catch (error) {
       console.error(`Error cancelling meeting in ${roomId}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.sendFormattedMessage(roomId, `❌ **Failed to cancel meeting:** ${errorMessage}`);
+      await this.sendFormattedMessage(roomId, `❌ FAIL: Meeting could not be cancelled.\n\n${errorMessage}`);
     }
   }
 
@@ -643,81 +560,64 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       const status = this.meetingManager.getMeetingStatus(roomId);
       
       if (status.hasActiveMeeting && status.session) {
-        // Requirements 7.2: Status response with meeting details when active
-        const formattedMessage = `**Meeting Status: ACTIVE** 🟢\n\n` +
-          `**Meeting Details:**\n` +
-          `• **Room:** ${status.session.roomName}\n` +
-          `• **Chair:** ${status.session.chairDisplayName}\n` +
-          `• **Started:** ${status.session.startTime.toLocaleString()}\n` +
-          `• **Duration:** ${status.duration}\n` +
-          `• **Messages captured:** ${status.messageCount}\n` +
-          `• **Participants:** ${status.session.participants.size}\n\n` +
-          `📝 All messages in this room are being recorded for meeting minutes.\n` +
-          `Use \`/endmeeting\` to end the meeting and generate minutes.`;
+        const formattedMessage = `STATUS: Active for ${status.duration}.\n\n` +
+          `All messages in this room are being recorded.\n` +
+          `Lines said: ${status.messageCount}\n` +
+          `Use #endmeeting to end the meeting.`;
         
         await this.sendFormattedMessage(roomId, formattedMessage);
       } else {
-        // Requirement 7.3: Status response when no meeting is active
-        const formattedMessage = `**Meeting Status: NO ACTIVE MEETING** ⚪\n\n` +
-          `No meeting is currently in progress in this room.\n` +
-          `Messages are not being recorded.\n\n` +
-          `Use \`/startmeeting\` to begin a new meeting session.`;
+        const formattedMessage = `STATUS: No active meeting.\n\n` +
+          `Use #startmeeting to begin a new meeting session.`;
         
         await this.sendFormattedMessage(roomId, formattedMessage);
       }
     } catch (error) {
       console.error(`Error getting meeting status in ${roomId}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.sendFormattedMessage(roomId, `❌ **Failed to get meeting status:** ${errorMessage}`);
+      await this.sendFormattedMessage(roomId, `❌ FAIL: Failed to get meeting status.\n\n${errorMessage}`);
     }
   }
 
-  // Helper method to get room name
   private async getRoomName(roomId: string): Promise<string> {
     if (!this.client) {
       return roomId; // Fallback to room ID if client not available
     }
 
     try {
-      // Try to get the room's display name
       const roomState = await this.client.getRoomState(roomId);
-      const nameEvent = roomState.find((event: any) => event.type === "m.room.name");
+      const nameEvent = roomState.find((event: MatrixEvent) => event.type === "m.room.name");
       
       if (nameEvent && nameEvent.content && nameEvent.content.name) {
         return nameEvent.content.name;
       }
       
-      // Fallback to canonical alias if no name
-      const aliasEvent = roomState.find((event: any) => event.type === "m.room.canonical_alias");
+      const aliasEvent = roomState.find((event: MatrixEvent) => event.type === "m.room.canonical_alias");
       if (aliasEvent && aliasEvent.content && aliasEvent.content.alias) {
         return aliasEvent.content.alias;
       }
       
-      // Final fallback to room ID
       return roomId;
     } catch (error) {
       console.warn(`Failed to get room name for ${roomId}:`, error);
-      return roomId; // Fallback to room ID
+      return roomId;
     }
   }
 
-  // Helper method to get sender display name
-  private async getSenderDisplayName(roomId: string, userId: string): Promise<string> {
+  private async getSenderDisplayName(userId: string): Promise<string> {
     if (!this.client) {
       return userId; // Fallback to user ID if client not available
     }
 
     try {
-      // Try to get the user's display name in the room
       const profile = await this.client.getUserProfile(userId);
       return profile.displayname || userId;
     } catch (error) {
       console.warn(`Failed to get display name for ${userId}:`, error);
-      return userId; // Fallback to user ID
+      return userId; 
     }
   }
 
-  // Helper method to calculate duration between two dates
   private calculateDuration(startTime: Date, endTime: Date): string {
     const durationMs = endTime.getTime() - startTime.getTime();
     const hours = Math.floor(durationMs / (1000 * 60 * 60));

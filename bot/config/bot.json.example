@@ -22,5 +22,9 @@
       "token": "WILL_BE_OVERRIDDEN_BY_GITHUB_TOKEN_ENV_VAR",
       "websiteUrl": "https://your-org.github.io/meeting-minutes"
     }
+  },
+  "minutesGeneration": {
+    "includeSystemMessages": true,
+    "timeZone": "UTC"
   }
 }

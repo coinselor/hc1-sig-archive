@@ -9,17 +9,11 @@ A TypeScript Matrix bot that captures meeting minutes and automatically publishe
 - [Deno](https://deno.land/) v1.x+ (for bot)
 - [Bun](https://bun.sh/) (for website)
 - Matrix homeserver access token
-- GitHub repository (for hosting)
+- GitHub repository (for automatic deployment to GitHub Pages)
 
 ### Setup
 
-1. **Clone and install**
-
-   ```bash
-   git clone <your-repo-url>
-   cd hc1-sig-archive
-   cd website && bun install
-   ```
+1. **Fork this repository**
 
 2. **Configure bot** (see [Bot Setup](#bot-setup))
 
@@ -28,16 +22,16 @@ A TypeScript Matrix bot that captures meeting minutes and automatically publishe
 ## Project Structure
 
 ```
-├── bot/                    # Matrix bot (Deno/TypeScript)
-│   ├── src/               # Bot source code
-│   ├── config/            # Configuration files
-│   └── tests/             # Bot tests
-├── website/               # Nuxt 4 static site
-│   ├── pages/             # Vue pages
-│   ├── components/        # Vue components
-│   └── content.config.ts  # Content configuration
+├── bot/                     # Matrix bot (Deno/TypeScript)
+│   ├── src/                 # Bot source code
+│   ├── config/              # Config file
+│   └── scripts/             # Utility scripts
+├── website/                 # Nuxt 4 static site
+│   ├── app/                 # Vue pages
+│   ├── types/               # Meeting types
+│   └── content.config.ts    # Nuxt Content configuration
 ├── data/
-│   └── meetings/          # Generated meeting minutes
+│   └── meetings/[channel]/  # Generated meeting minutes
 └── .github/workflows/     # CI/CD automation
 ```
 
@@ -45,10 +39,12 @@ A TypeScript Matrix bot that captures meeting minutes and automatically publishe
 
 | Command          | Description                     | Permission       |
 | ---------------- | ------------------------------- | ---------------- |
-| `/startmeeting`  | Begin capturing messages        | Authorized users |
-| `/endmeeting`    | Stop capture & generate minutes | Authorized users |
-| `/cancelmeeting` | Cancel without saving           | Authorized users |
-| `/meetingstatus` | Check current meeting status    | Anyone           |
+| `#startmeeting`  | Begin capturing messages        | Authorized users |
+| `#endmeeting`    | Stop capture & generate minutes | Authorized users |
+| `#cancelmeeting` | Cancel without saving           | Authorized users |
+| `#status`        | Check current meeting status    | Anyone           |
+| `#help`          | Show available commands         | Anyone           |
+
 
 ## Bot Setup
 
@@ -61,7 +57,8 @@ Create `bot/config/bot.json`:
   "matrix": {
     "homeserverUrl": "https://matrix.example.org",
     "accessToken": "your-matrix-token",
-    "userId": "@bot:example.org"
+    "userId": "@bot:example.org",
+    "displayName": "Meeting Bot"
   },
   "authorization": {
     "authorizedUsers": ["@user1:example.org", "@user2:example.org"]
@@ -70,12 +67,22 @@ Create `bot/config/bot.json`:
     "provider": "github",
     "github": {
       "repository": "username/repo-name",
+      "branch": "main",
       "token": "github-token",
       "websiteUrl": "https://username.github.io/repo-name"
     }
+  },
+  "minutesGeneration": {
+    "includeSystemMessages": true,
+    "timeZone": "UTC"
   }
 }
 ```
+
+**Configuration Options:**
+
+- **`includeSystemMessages`**: Include join/leave events and message redactions in minutes
+- **`timeZone`**: Timezone for timestamps (e.g., "America/New_York", "Europe/London")
 
 ### 2. Run Bot
 
@@ -84,7 +91,7 @@ cd bot
 deno run --allow-net --allow-read --allow-write --allow-env src/main.ts
 ```
 
-### Local Development
+## Local Development
 
 ```bash
 cd website
@@ -93,7 +100,7 @@ bun run build   # Production build
 bun run generate # Static site generation
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Automatic (Recommended)
 
@@ -108,7 +115,7 @@ bun run generate
 # Deploy ./website/.output/public to your hosting provider
 ```
 
-## 📋 Meeting Minutes Format
+## Meeting Minutes Format
 
 Generated minutes include:
 
@@ -132,20 +139,19 @@ participants: ["@alice:example.org", "@bob:example.org"]
 14:31:02 - Bob: Thanks for organizing this
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
 ```bash
 # Bot configuration
-MATRIX_TOKEN=your-matrix-access-token
+MATRIX_ACCESS_TOKEN=your-matrix-access-token
 GITHUB_TOKEN=your-github-token
-
-# Optional: Custom paths
-BOT_CONFIG_PATH=./config/bot.json
 ```
 
-### GitHub Actions
+**Note**: The bot expects the configuration file at `config/bot.json`.
+
+## GitHub Actions
 
 Automatically triggers on:
 

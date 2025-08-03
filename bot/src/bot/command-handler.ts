@@ -5,7 +5,7 @@ export interface CommandHandlerOptions {
 }
 
 export interface ParsedCommand {
-  command: "start" | "end" | "cancel" | "status";
+  command: "start" | "end" | "cancel" | "status" | "help";
   valid: boolean;
   error?: string;
 }
@@ -28,7 +28,7 @@ export class CommandHandler {
 
   /**
    * Parse a command string and return the parsed command information
-   * @param commandText - The raw command text (e.g., "/startmeeting")
+   * @param commandText - The raw command text (e.g., "#startmeeting")
    * @returns ParsedCommand object with command type and validation status
    */
   parseCommand(commandText: string): ParsedCommand {
@@ -42,16 +42,14 @@ export class CommandHandler {
 
     const trimmed = commandText.trim();
 
-    // Check if it starts with a slash
-    if (!trimmed.startsWith("/")) {
+    if (!trimmed.startsWith("#")) {
       return {
         command: "start",
         valid: false,
-        error: "Commands must start with '/'",
+        error: "Commands must start with '#'",
       };
     }
 
-    // Extract the command part (remove the slash and any arguments)
     const commandPart = trimmed.substring(1).split(" ")[0].toLowerCase();
 
     switch (commandPart) {
@@ -75,11 +73,16 @@ export class CommandHandler {
           command: "status",
           valid: true,
         };
+      case "help":
+        return {
+          command: "help",
+          valid: true,
+        };
       default:
         return {
           command: "start",
           valid: false,
-          error: `Unknown command: ${commandPart}. Supported commands: /startmeeting, /endmeeting, /cancelmeeting, /meetingstatus`,
+          error: `Unknown command: ${commandPart}.\nSupported commands: #startmeeting, #endmeeting, #cancelmeeting, #meetingstatus, #help`,
         };
     }
   }
@@ -90,37 +93,28 @@ export class CommandHandler {
    * @param command - The command to validate
    * @returns CommandResponse with authorization result
    */
-  validateAuthorization(userId: string, command: "start" | "end" | "cancel" | "status"): CommandResponse {
-    // Status command doesn't require authorization - anyone can check meeting status
-    if (command === "status") {
+  validateAuthorization(userId: string, command: "start" | "end" | "cancel" | "status" | "help"): CommandResponse {
+    if (command === "status" || command === "help") {
       return {
         success: true,
-        message: "Status command is available to all users",
+        message: command === "help" ? "Help command is available to all users" : "Status command is available to all users",
         requiresAuthorization: false,
       };
     }
 
-    // All other commands require authorization
     const isAuthorized = this.authorizationService.isAuthorized(userId, command);
     
     if (!isAuthorized) {
-      // Requirement 6.6: Clear permission denied message for unauthorized users
-      const commandNames = {
-        start: "start meetings",
-        end: "end meetings", 
-        cancel: "cancel meetings"
-      };
-      
       return {
         success: false,
-        message: `❌ **Access Denied**\n\nInsufficient permissions. You are not authorized to ${commandNames[command]}.\n\nOnly designated meeting chairs can perform this action. Please contact your administrator if you believe this is an error.`,
+        message: `❌ FAIL: Access denied. Insufficient permissions`,
         requiresAuthorization: true,
       };
     }
 
     return {
       success: true,
-      message: "User is authorized to perform this command",
+      message: "User is authorized.",
       requiresAuthorization: true,
     };
   }
@@ -131,9 +125,8 @@ export class CommandHandler {
    * @param event - The Matrix event containing the command
    * @returns CommandResult with the processed command information
    */
-  async handleCommand(roomId: string, event: MatrixEvent): Promise<CommandResult> {
+  handleCommand(event: MatrixEvent): CommandResult {
     try {
-      // Extract the message content
       const content = event.content as { body?: string };
       const messageBody = content.body;
 
@@ -145,7 +138,6 @@ export class CommandHandler {
         };
       }
 
-      // Parse the command
       const parsedCommand = this.parseCommand(messageBody);
       
       if (!parsedCommand.valid) {
@@ -156,7 +148,6 @@ export class CommandHandler {
         };
       }
 
-      // Validate authorization
       const authResult = this.validateAuthorization(event.sender, parsedCommand.command);
       
       if (!authResult.success) {
@@ -167,7 +158,6 @@ export class CommandHandler {
         };
       }
 
-      // Command is valid and user is authorized
       return {
         command: parsedCommand.command,
         valid: true,
@@ -195,13 +185,12 @@ export class CommandHandler {
 
     const trimmed = messageBody.trim();
     
-    // Check if it starts with a slash and matches our supported commands
-    if (!trimmed.startsWith("/")) {
+    if (!trimmed.startsWith("#")) {
       return false;
     }
 
     const commandPart = trimmed.substring(1).split(" ")[0].toLowerCase();
-    const supportedCommands = ["startmeeting", "endmeeting", "cancelmeeting", "meetingstatus"];
+    const supportedCommands = ["startmeeting", "endmeeting", "cancelmeeting", "meetingstatus", "help"];
     
     return supportedCommands.includes(commandPart);
   }
@@ -211,13 +200,6 @@ export class CommandHandler {
    * @returns String containing help information for all supported commands
    */
   getHelpText(): string {
-    return `**Meeting Bot Commands:**
-
-• \`/startmeeting\` - Start a new meeting session (requires authorization)
-• \`/endmeeting\` - End the current meeting and generate minutes (requires authorization)  
-• \`/cancelmeeting\` - Cancel the current meeting without generating minutes (requires authorization)
-• \`/meetingstatus\` - Check if a meeting is currently active (available to all users)
-
-**Note:** Only authorized users can start, end, or cancel meetings. Anyone can check meeting status.`;
+    return "Available commands:\n\n#startmeeting - start a new meeting session.\n#endmeeting - end the current meeting and generate minutes.\n#cancelmeeting - cancel the current meeting without generating minutes.\n#meetingstatus - check if a meeting is currently active.\n#help - display this help message.";
   }
 }

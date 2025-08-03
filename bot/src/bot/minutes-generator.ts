@@ -32,16 +32,15 @@ export interface MinutesMetadata {
 }
 
 /**
- * Generates meeting minutes in Markdown format with proper frontmatter
+ * Generates meeting minutes in Markdown format with frontmatter metadata
  */
 export class MinutesGenerator {
   private options: MinutesGeneratorOptions;
 
   constructor(options: MinutesGeneratorOptions = {}) {
     this.options = {
-      includeSystemMessages: true,
-      timeZone: "UTC",
-      ...options,
+      includeSystemMessages: options.includeSystemMessages ?? true,
+      timeZone: options.timeZone ?? "UTC",
     };
   }
 
@@ -55,7 +54,7 @@ export class MinutesGenerator {
 
     const metadata = this.generateMetadata(session);
     const frontmatter = this.generateFrontmatter(metadata);
-    const content = this.generateContent(session, metadata);
+    const content = this.generateContent(session);
     const filename = this.generateFilename(session);
 
     const fullContent = `${frontmatter}\n${content}`;
@@ -128,37 +127,24 @@ published: "${metadata.published}"
    */
   private generateContent(
     session: MeetingSession,
-    metadata: MinutesMetadata
   ): string {
-    const startDate = this.formatDate(session.startTime);
-
-    // Generate meeting minutes from messages
-    const minutesContent = this.generateMinutesContent(session);
-
-    return `
-
-${minutesContent}
-`;
+    return this.generateMinutesContent(session);
   }
 
   /**
    * Generate participant list with display names
    */
   private generateParticipantList(session: MeetingSession): string {
-    // Create a map of user IDs to display names from captured messages
     const userDisplayNames = new Map<string, string>();
 
-    // Add the chair
     userDisplayNames.set(session.chairUserId, session.chairDisplayName);
 
-    // Extract display names from messages
     for (const message of session.messages) {
       if (message.senderId !== "system") {
         userDisplayNames.set(message.senderId, message.senderDisplayName);
       }
     }
 
-    // Generate sorted participant list
     const participants = Array.from(session.participants)
       .sort()
       .map((userId) => {
@@ -174,7 +160,7 @@ ${minutesContent}
    */
   private generateMinutesContent(session: MeetingSession): string {
     if (session.messages.length === 0) {
-      return "*No messages were captured during this meeting.*";
+      return "No messages were captured during this meeting.";
     }
 
     // Sort messages by timestamp
@@ -182,13 +168,11 @@ ${minutesContent}
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
     );
 
-    // Filter out original messages when edited versions exist
     const filteredMessages = this.filterDuplicateEdits(sortedMessages);
 
     const minutesLines: string[] = [];
 
     for (const message of filteredMessages) {
-      // Skip system messages if configured to do so
       if (
         !this.options.includeSystemMessages &&
         message.senderId === "system"
@@ -199,11 +183,14 @@ ${minutesContent}
       const timestamp = this.formatTimeWithSeconds(message.timestamp);
       const formattedMessage = this.formatMessage(message);
 
-      minutesLines.push(
-        `${timestamp} - ${message.senderDisplayName}: ${formattedMessage}`
-      );
+      if (message.messageType === "m.emote") {
+        minutesLines.push(`${timestamp} ${formattedMessage}`);
+      } else {
+        minutesLines.push(
+          `${timestamp} <${message.senderDisplayName}> ${formattedMessage}`
+        );
+      }
     }
-
     return minutesLines.join("\n");
   }
 
@@ -213,7 +200,6 @@ ${minutesContent}
   private formatMessage(message: CapturedMessage): string {
     let content = message.content;
 
-    // Handle different message types
     switch (message.messageType) {
       case "m.emote":
         content = `*${message.senderDisplayName} ${content}*`;
@@ -231,9 +217,8 @@ ${minutesContent}
         break;
     }
 
-    // Add edit indicator if message was edited
     if (message.isEdited) {
-      content += " *(edited)*";
+      content += " (edited)";
     }
 
     return content;
@@ -335,7 +320,6 @@ ${minutesContent}
    * Calculate participant statistics for the meeting
    */
   private calculateParticipantStats(session: MeetingSession): ParticipantStat[] {
-    // Filter out duplicate edits first
     const sortedMessages = [...session.messages].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
     );
@@ -343,7 +327,6 @@ ${minutesContent}
     
     const messageCounts = new Map<string, { displayName: string; count: number }>();
     
-    // Count messages per participant (excluding system messages)
     for (const message of filteredMessages) {
       if (message.senderId !== "system") {
         const existing = messageCounts.get(message.senderId);
@@ -354,7 +337,6 @@ ${minutesContent}
       }
     }
     
-    // Convert to sorted array (by message count descending)
     return Array.from(messageCounts.entries())
       .map(([userId, data]) => ({
         userId,
