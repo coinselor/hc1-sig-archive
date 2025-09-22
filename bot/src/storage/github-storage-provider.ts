@@ -40,7 +40,7 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
             return `${this.websiteUrl.replace(/\/$/, '')}/meetings/${cleanPath}`;
         } else {
             const filePath = this.generateFilePath(session);
-            return `https://github.com/${this.repository}/blob/${this.branch}/data/${filePath}`;
+            return `https://github.com/${this.repository}/blob/${this.branch}/${filePath}`;
         }
     }
 
@@ -56,7 +56,8 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
 
         const filename = `${year}-${month}-${day}-${hour}-${minute}-${channelName}.md`;
 
-        return `meetings/${channelName}/${filename}`;
+        // Store under the repository path watched by CI/CD and used by the website
+        return `data/meetings/${channelName}/${filename}`;
     }
 
     commitMessage(session: MeetingSession): string {
