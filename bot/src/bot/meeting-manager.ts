@@ -48,6 +48,19 @@ export class MeetingManager {
    */
   async initialize(): Promise<void> {
     try {
+      if (this.kvPath) {
+        const kvDir = this.kvPath.substring(0, this.kvPath.lastIndexOf('/'));
+        if (kvDir) {
+          try {
+            await Deno.mkdir(kvDir, { recursive: true });
+          } catch (error) {
+            if (!(error instanceof Deno.errors.AlreadyExists)) {
+              throw error;
+            }
+          }
+        }
+      }
+      
       this.kv = await Deno.openKv(this.kvPath);
       
       await this.recoverActiveSessions();
@@ -227,6 +240,37 @@ export class MeetingManager {
       messageCount: session.messages.length,
       duration,
     };
+  }
+
+  /**
+   * Set the topic for an active meeting
+   */
+  async setMeetingTopic(roomId: string, topic: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const session = this.activeSessions.get(roomId);
+      
+      if (!session) {
+        return {
+          success: false,
+          message: "No active meeting found in this room. Start a meeting first with #startmeeting.",
+        };
+      }
+
+      session.topic = topic;
+      
+      await this.persistSession(session);
+      
+      return {
+        success: true,
+        message: `Topic updated successfully.`,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        message: `Failed to set topic: ${errorMessage}`,
+      };
+    }
   }
 
   /**

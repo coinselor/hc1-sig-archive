@@ -1,7 +1,7 @@
 {
   "tasks": {
-    "start": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv src/main.ts",
-    "dev": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv --watch src/main.ts",
+    "start": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv --env-file=.env src/main.ts",
+    "dev": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-kv --env-file=.env.local --watch src/main.ts",
     "test": "deno test --allow-net --allow-read --allow-write --allow-env --unstable-kv"
   },
   "imports": {

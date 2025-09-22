@@ -1,4 +1,4 @@
-import { MeetingSession, StorageProvider, GitHubStorageProvider as IGitHubStorageProvider } from "../types/index.ts";
+import { MeetingSession, GitHubStorageProvider as IGitHubStorageProvider } from "../types/index.ts";
 
 export class GitHubStorageProvider implements IGitHubStorageProvider {
     public readonly repository: string;
@@ -23,13 +23,8 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
         const commitMessage = this.commitMessage(session);
 
         try {
-            // Get the current file SHA if it exists (for updates)
-            const existingFile = await this.getFileInfo(filePath);
+            await this.createFile(filePath, content, commitMessage);
 
-            // Create or update the file
-            await this.createOrUpdateFile(filePath, content, commitMessage, existingFile?.sha);
-
-            // Return the URL where the minutes can be accessed
             return await this.getMinutesUrl(session);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -37,24 +32,21 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
         }
     }
 
+    // deno-lint-ignore require-await
     async getMinutesUrl(session: MeetingSession): Promise<string> {
         if (this.websiteUrl) {
-            // Return the website URL if configured
             const filePath = this.generateFilePath(session);
-            const htmlPath = filePath.replace(/\.md$/, '.html');
-            return `${this.websiteUrl.replace(/\/$/, '')}/${htmlPath}`;
+            const cleanPath = filePath.replace(/\.md$/, '').replace(/^data\/meetings\//, '');
+            return `${this.websiteUrl.replace(/\/$/, '')}/meetings/${cleanPath}`;
         } else {
-            // Return the GitHub repository URL
             const filePath = this.generateFilePath(session);
-            return `https://github.com/${this.repository}/blob/${this.branch}/${filePath}`;
+            return `https://github.com/${this.repository}/blob/${this.branch}/data/${filePath}`;
         }
     }
 
     generateFilePath(session: MeetingSession): string {
-        // Convert room name to a safe directory name
         const channelName = this.sanitizeChannelName(session.roomName);
 
-        // Format the date and time for the filename
         const startTime = session.startTime;
         const year = startTime.getFullYear();
         const month = String(startTime.getMonth() + 1).padStart(2, '0');
@@ -62,14 +54,14 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
         const hour = String(startTime.getHours()).padStart(2, '0');
         const minute = String(startTime.getMinutes()).padStart(2, '0');
 
-        const filename = `${year}-${month}-${day}-${hour}-${minute}.md`;
+        const filename = `${year}-${month}-${day}-${hour}-${minute}-${channelName}.md`;
 
         return `meetings/${channelName}/${filename}`;
     }
 
     commitMessage(session: MeetingSession): string {
         const startTime = session.startTime.toISOString().split('T')[0]; // YYYY-MM-DD format
-        return `Add meeting minutes: ${session.roomName} - ${startTime}
+        return `bot: add meeting minutes for ${session.roomName} on ${startTime}
 
 Meeting Details:
 - Chair: ${session.chairDisplayName}
@@ -102,53 +94,32 @@ Meeting Details:
         }
     }
 
-    private async getFileInfo(filePath: string): Promise<{ sha: string } | null> {
-        const url = `https://api.github.com/repos/${this.repository}/contents/${filePath}`;
-
+    private encodeUtf8ToBase64(str: string): string {
         try {
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Matrix-Meeting-Bot/1.0',
-                },
-            });
-
-            if (response.status === 404) {
-                return null; // File doesn't exist
+            const utf8Bytes = new TextEncoder().encode(str);
+            return btoa(String.fromCharCode(...utf8Bytes));
+        } catch (_error) {
+            const utf8Bytes = new TextEncoder().encode(str);
+            let binaryString = '';
+            for (let i = 0; i < utf8Bytes.length; i++) {
+                binaryString += String.fromCharCode(utf8Bytes[i]);
             }
-
-            if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            return { sha: data.sha };
-        } catch (error) {
-            if (error instanceof Error && error.message.includes('404')) {
-                return null;
-            }
-            throw error;
+            return btoa(binaryString);
         }
     }
 
-    private async createOrUpdateFile(
+    private async createFile(
         filePath: string,
         content: string,
         commitMessage: string,
-        sha?: string
     ): Promise<void> {
         const url = `https://api.github.com/repos/${this.repository}/contents/${filePath}`;
 
         const body: Record<string, unknown> = {
             message: commitMessage,
-            content: btoa(unescape(encodeURIComponent(content))), // Base64 encode UTF-8 content
+            content: this.encodeUtf8ToBase64(content),
             branch: this.branch,
         };
-
-        if (sha) {
-            body.sha = sha; // Required for updates
-        }
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -156,7 +127,7 @@ Meeting Details:
                 'Authorization': `Bearer ${this.token}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Matrix-Meeting-Bot/1.0',
+                'User-Agent': 'HC1-Meeting-Bot/1.0',
             },
             body: JSON.stringify(body),
         });

@@ -8,6 +8,7 @@ export interface MeetingSession {
   chairDisplayName: string;
   startTime: Date;
   endTime?: Date;
+  topic?: string;
   messages: CapturedMessage[];
   participants: Set<string>;
 }
@@ -64,6 +65,10 @@ export const BotConfigurationSchema = z.object({
     message: "Storage configuration must match the selected provider",
   }),
   
+  denoKv: z.object({
+    path: z.string().optional(),
+  }).optional(),
+  
   minutesGeneration: z.object({
     includeSystemMessages: z.boolean().default(true),
     timeZone: z.string().default("UTC"),
@@ -86,7 +91,7 @@ export interface GitHubStorageProvider extends StorageProvider {
 }
 
 export interface AuthorizationService {
-  isAuthorized(userId: string, action: "start" | "end" | "cancel"): boolean;
+  isAuthorized(userId: string, action: "start" | "end" | "cancel" | "topic"): boolean;
   loadAuthorizedUsers(): Promise<void>;
   reloadConfiguration(): Promise<void>;
 }
@@ -151,7 +156,7 @@ export interface MatrixBotService {
 }
 
 export interface CommandResult {
-  command: "start" | "end" | "cancel" | "status" | "help";
+  command: "start" | "end" | "cancel" | "status" | "help" | "topic";
   valid: boolean;
   error?: string;
 }

@@ -86,7 +86,7 @@
       </div>
 
       <div class="font-mono text-sm whitespace-pre-line text-zinc-700">
-        <ContentRenderer :value="meeting" :prose="false" />
+        <ContentRenderer :value="meeting"/>
       </div>
     </div>
 

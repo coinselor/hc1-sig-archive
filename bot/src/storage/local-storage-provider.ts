@@ -12,10 +12,8 @@ export class LocalStorageProvider implements StorageProvider {
     const fullPath = `${this.directory}/${filePath}`;
 
     try {
-      // Ensure the directory exists
       await this.ensureDirectoryExists(fullPath);
       
-      // Write the file
       await Deno.writeTextFile(fullPath, content);
       
       return fullPath;
@@ -25,16 +23,15 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
+  // deno-lint-ignore require-await
   async getMinutesUrl(session: MeetingSession): Promise<string> {
     const filePath = this.generateFilePath(session);
     return `${this.directory}/${filePath}`;
   }
 
   private generateFilePath(session: MeetingSession): string {
-    // Convert room name to a safe directory name
     const channelName = this.sanitizeChannelName(session.roomName);
     
-    // Format the date and time for the filename
     const startTime = session.startTime;
     const year = startTime.getFullYear();
     const month = String(startTime.getMonth() + 1).padStart(2, '0');
@@ -42,9 +39,9 @@ export class LocalStorageProvider implements StorageProvider {
     const hour = String(startTime.getHours()).padStart(2, '0');
     const minute = String(startTime.getMinutes()).padStart(2, '0');
     
-    const filename = `${year}-${month}-${day}-${hour}-${minute}.md`;
+    const filename = `${year}-${month}-${day}-${hour}-${minute}-${channelName}.md`;
     
-    return `${channelName}/${filename}`;
+    return `meetings/${channelName}/${filename}`;
   }
 
   private sanitizeChannelName(roomName: string): string {

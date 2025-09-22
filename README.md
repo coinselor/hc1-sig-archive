@@ -42,9 +42,9 @@ A TypeScript Matrix bot that captures meeting minutes and automatically publishe
 | `#startmeeting`  | Begin capturing messages        | Authorized users |
 | `#endmeeting`    | Stop capture & generate minutes | Authorized users |
 | `#cancelmeeting` | Cancel without saving           | Authorized users |
+| `#topic`         | Set meeting topic/title         | Authorized users |
 | `#status`        | Check current meeting status    | Anyone           |
 | `#help`          | Show available commands         | Anyone           |
-
 
 ## Bot Setup
 
@@ -88,7 +88,7 @@ Create `bot/config/bot.json`:
 
 ```bash
 cd bot
-deno run --allow-net --allow-read --allow-write --allow-env src/main.ts
+deno run --allow-net --allow-read --allow-write --allow-env --env-file=.env src/main.ts
 ```
 
 ## Local Development

@@ -14,7 +14,7 @@ export class AuthorizationServiceImpl implements AuthorizationService {
    * @param action - The action to check authorization for
    * @returns true if the user is authorized, false otherwise
    */
-  isAuthorized(userId: string, action: "start" | "end" | "cancel"): boolean {
+  isAuthorized(userId: string, action: "start" | "end" | "cancel" | "topic"): boolean {
     // All authorized users can perform all meeting actions
     return this.authorizedUsers.has(userId);
   }

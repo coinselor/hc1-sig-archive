@@ -14,14 +14,17 @@
   "storage": {
     "provider": "github",
     "local": {
-      "directory": "./data/meetings"
+      "directory": "../data/"
     },
     "github": {
       "repository": "your-org/meeting-minutes",
-      "branch": "main",
+      "branch": "master",
       "token": "WILL_BE_OVERRIDDEN_BY_GITHUB_TOKEN_ENV_VAR",
       "websiteUrl": "https://your-org.github.io/meeting-minutes"
     }
+  },
+  "denoKv": {
+    "path": "./db/meetings.db"
   },
   "minutesGeneration": {
     "includeSystemMessages": true,

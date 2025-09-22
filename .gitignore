@@ -5,6 +5,11 @@
 bot/config/bot.json
 bot/node_modules/
 bot/data/matrix-storage.json
+bot/db/*.db
+# Environment variables
+.env
+.env.local
+.env.*.local
 
 # Website
 website/.output

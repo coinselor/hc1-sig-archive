@@ -5,7 +5,7 @@ export interface CommandHandlerOptions {
 }
 
 export interface ParsedCommand {
-  command: "start" | "end" | "cancel" | "status" | "help";
+  command: "start" | "end" | "cancel" | "status" | "help" | "topic";
   valid: boolean;
   error?: string;
 }
@@ -78,11 +78,16 @@ export class CommandHandler {
           command: "help",
           valid: true,
         };
+      case "topic":
+        return {
+          command: "topic",
+          valid: true,
+        };
       default:
         return {
           command: "start",
           valid: false,
-          error: `Unknown command: ${commandPart}.\nSupported commands: #startmeeting, #endmeeting, #cancelmeeting, #meetingstatus, #help`,
+          error: `Unknown command: ${commandPart}.\nSupported commands: #startmeeting, #endmeeting, #cancelmeeting, #meetingstatus, #help, #topic`,
         };
     }
   }
@@ -93,7 +98,7 @@ export class CommandHandler {
    * @param command - The command to validate
    * @returns CommandResponse with authorization result
    */
-  validateAuthorization(userId: string, command: "start" | "end" | "cancel" | "status" | "help"): CommandResponse {
+  validateAuthorization(userId: string, command: "start" | "end" | "cancel" | "status" | "help" | "topic"): CommandResponse {
     if (command === "status" || command === "help") {
       return {
         success: true,
@@ -185,14 +190,14 @@ export class CommandHandler {
 
     const trimmed = messageBody.trim();
     
-    if (!trimmed.startsWith("#")) {
-      return false;
-    }
-
-    const commandPart = trimmed.substring(1).split(" ")[0].toLowerCase();
-    const supportedCommands = ["startmeeting", "endmeeting", "cancelmeeting", "meetingstatus", "help"];
+    // Check for exact command matches to avoid Markdown conflicts
+    const supportedCommands = ["#startmeeting", "#endmeeting", "#cancelmeeting", "#meetingstatus", "#help", "#topic"];
     
-    return supportedCommands.includes(commandPart);
+    // Check if the message starts with any of our exact commands (case-insensitive)
+    const lowerTrimmed = trimmed.toLowerCase();
+    return supportedCommands.some(cmd => 
+      lowerTrimmed === cmd || lowerTrimmed.startsWith(cmd + " ")
+    );
   }
 
   /**
@@ -200,6 +205,6 @@ export class CommandHandler {
    * @returns String containing help information for all supported commands
    */
   getHelpText(): string {
-    return "Available commands:\n\n#startmeeting - start a new meeting session.\n#endmeeting - end the current meeting and generate minutes.\n#cancelmeeting - cancel the current meeting without generating minutes.\n#meetingstatus - check if a meeting is currently active.\n#help - display this help message.";
+    return "Useful commands:\n#startmeeting | #topic | #endmeeting | #cancelmeeting | #meetingstatus | #help";
   }
 }

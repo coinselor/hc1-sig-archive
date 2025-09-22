@@ -38,7 +38,10 @@ export class MatrixBotServiceImpl implements MatrixBotService {
   ) {
     this.config = config;
     this.authorizationService = authorizationService;
-    this.meetingManager = meetingManager || new MeetingManager({ minutesGeneration: config.minutesGeneration });
+    this.meetingManager = meetingManager || new MeetingManager({ 
+      minutesGeneration: config.minutesGeneration,
+      kvPath: config.denoKv?.path
+    });
     this.commandHandler = new CommandHandler({
       authorizationService: this.authorizationService,
     });
@@ -164,7 +167,10 @@ export class MatrixBotServiceImpl implements MatrixBotService {
 
   private isCommand(event: MatrixEvent): boolean {
     const content = event.content as unknown as MessageContent;
-    return content.msgtype === "m.text" && !!content.body && content.body.startsWith("#");
+    if (content.msgtype !== "m.text" || !content.body) {
+      return false;
+    }
+    return this.commandHandler.isCommand(content.body);
   }
 
   async processEvent(roomId: string, event: MatrixEvent): Promise<void> {
@@ -209,6 +215,9 @@ export class MatrixBotServiceImpl implements MatrixBotService {
           break;
         case "help":
           await this.sendFormattedMessage(roomId, this.commandHandler.getHelpText());
+          break;
+        case "topic":
+          await this.handleTopicCommand(roomId, command);
           break;
         default:
           await this.sendMessage(roomId, "Unknown command. Use #help to see available commands.");
@@ -576,6 +585,31 @@ export class MatrixBotServiceImpl implements MatrixBotService {
       console.error(`Error getting meeting status in ${roomId}:`, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.sendFormattedMessage(roomId, `❌ FAIL: Failed to get meeting status.\n\n${errorMessage}`);
+    }
+  }
+
+  private async handleTopicCommand(roomId: string, command: string): Promise<void> {
+    try {
+      // Extract topic from command (everything after "#topic ")
+      const topicMatch = command.match(/^#topic\s+(.+)$/i);
+      
+      if (!topicMatch || !topicMatch[1].trim()) {
+        await this.sendFormattedMessage(roomId, "❌ FAIL: Please provide a topic.\n\nUsage: #topic Your meeting topic here");
+        return;
+      }
+      
+      const topic = topicMatch[1].trim();
+      const result = await this.meetingManager.setMeetingTopic(roomId, topic);
+      
+      if (result.success) {
+        await this.sendFormattedMessage(roomId, `✅ SUCCESS: Meeting topic set to: "${topic}"`);
+      } else {
+        await this.sendFormattedMessage(roomId, `❌ FAIL: ${result.message}`);
+      }
+    } catch (error) {
+      console.error(`Error setting topic in ${roomId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.sendFormattedMessage(roomId, `❌ FAIL: Failed to set topic.\n\n${errorMessage}`);
     }
   }
 

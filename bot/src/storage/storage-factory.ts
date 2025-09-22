@@ -16,11 +16,12 @@ export class StorageFactory {
           websiteUrl: config.storage.github.websiteUrl,
         });
 
-      case "local":
-        const localConfig = config.storage.local || { directory: "./data/meetings" };
+      case "local": {
+        const localConfig = config.storage.local || { directory: "../data/" };
         return new LocalStorageProvider({
           directory: localConfig.directory,
         });
+      }
 
       default:
         throw new Error(`Unsupported storage provider: ${config.storage.provider}`);
@@ -29,7 +30,7 @@ export class StorageFactory {
 
   static createFallbackStorageProvider(): StorageProvider {
     return new LocalStorageProvider({
-      directory: "./data/meetings-backup",
+      directory: "../data/meetings-backup",
     });
   }
 }

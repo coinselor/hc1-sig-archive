@@ -78,7 +78,7 @@ export class MinutesGenerator {
     const participantStats = this.calculateParticipantStats(session);
 
     return {
-      title: `${session.roomName} Meeting`,
+      title: session.topic || `${session.roomName} Meeting`,
       room: session.roomName,
       chair: session.chairDisplayName,
       chairId: session.chairUserId,
@@ -187,7 +187,7 @@ published: "${metadata.published}"
         minutesLines.push(`${timestamp} ${formattedMessage}`);
       } else {
         minutesLines.push(
-          `${timestamp} <${message.senderDisplayName}> ${formattedMessage}`
+          `${timestamp} ${message.senderDisplayName}: ${formattedMessage}`
         );
       }
     }
@@ -213,7 +213,6 @@ published: "${metadata.published}"
         break;
       case "m.text":
       default:
-        // Regular text message, no special formatting needed
         break;
     }
 
