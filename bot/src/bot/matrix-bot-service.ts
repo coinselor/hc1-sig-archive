@@ -503,7 +503,7 @@ export class MatrixBotServiceImpl implements MatrixBotService {
           if (websiteUrl) {
             const formattedMessage = 
               `${result.session.roomName} meeting has ended after ${this.calculateDuration(result.session.startTime, result.session.endTime!)} with ${result.session.messages.length} messages captured and ${result.session.participants.size} participants.\n\n` +
-              `Minutes are available at ${websiteUrl}`;
+              `Minutes will be available at ${websiteUrl}`;
             
             await this.sendFormattedMessage(roomId, formattedMessage);
           } else {

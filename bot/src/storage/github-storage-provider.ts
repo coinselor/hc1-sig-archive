@@ -37,7 +37,8 @@ export class GitHubStorageProvider implements IGitHubStorageProvider {
         if (this.websiteUrl) {
             const filePath = this.generateFilePath(session);
             const cleanPath = filePath.replace(/\.md$/, '').replace(/^data\/meetings\//, '');
-            return `${this.websiteUrl.replace(/\/$/, '')}/meetings/${cleanPath}`;
+            // Website routes minutes at "/<channel>/<slug>" (no "/meetings" segment)
+            return `${this.websiteUrl.replace(/\/$/, '')}/${cleanPath}`;
         } else {
             const filePath = this.generateFilePath(session);
             return `https://github.com/${this.repository}/blob/${this.branch}/${filePath}`;
